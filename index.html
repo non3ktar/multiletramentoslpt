@@ -4,9 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CLLC - Super App de Multiletramentos</title>
-    <!-- Fonts & Icons -->
+    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Space+Grotesk:wght@300;500;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Firebase SDK (v9 Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    
     <style>
         :root {
             --primary: #6366f1;
@@ -224,14 +229,10 @@
                     </div>
                     <div class="card">
                         <div class="help-btn" onclick="guide('sd1_time')">?</div>
-                        <h3>Minha Linha do Tempo</h3>
-                        <div id="sd1-timeline" class="timeline">
-                            <div style="display: flex; gap: 10px; margin-bottom: 12px;">
-                                <input type="text" placeholder="Fato importante" style="flex: 2;"> 
-                                <input type="number" placeholder="Ano" style="flex: 1;">
-                            </div>
+                        <h3>Mosaico da Turma (Ao Vivo)</h3>
+                        <div id="sd1-mural" class="mosaico-grid">
+                            <!-- Produções do Firebase aparecerão aqui -->
                         </div>
-                        <button class="btn btn-g" onclick="addTimeline()"><i data-lucide="plus"></i> Adicionar Marco</button>
                     </div>
                 </div>
 
@@ -414,21 +415,92 @@
             <div id="prof-panel" class="hidden">
                 <div style="display: grid; gap: 15px;">
                     <div style="background: rgba(0,0,0,0.2); padding: 1.2rem; border-radius: 16px;">
-                        <h4 style="color: var(--primary);">Gestão de Tempo</h4>
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <h4 style="color: var(--primary); margin-bottom: 10px;">Gestão de Aula</h4>
+                        <div style="display: flex; gap: 10px;">
                             <button class="btn btn-g" onclick="startTimer()">20 Minutos</button>
                             <button class="btn btn-g" onclick="startTimer(15)">15 Minutos</button>
                         </div>
                     </div>
+                    
+                    <div style="background: rgba(0,0,0,0.2); padding: 1.2rem; border-radius: 16px;">
+                        <h4 style="color: var(--sd4); margin-bottom: 10px;">Moderação do Mural</h4>
+                        <div id="admin-production-list" style="max-height: 250px; overflow-y: auto; font-size: 0.8rem; display: grid; gap: 8px;">
+                            <!-- Lista de produções para o professor -->
+                            <p style="opacity: 0.5;">Carregando produções...</p>
+                        </div>
+                        <button class="btn btn-g" style="width: 100%; margin-top: 10px; font-size: 0.7rem; color: #ef4444;" onclick="clearAllProductions()">🗑️ Limpar Tudo (Nova Turma)</button>
+                    </div>
+
                     <button class="btn btn-p" style="width: 100%; justify-content: center;" onclick="revealSurprise()">🎁 Lançar Desafio Surpresa</button>
-                    <button class="btn btn-g" style="width: 100%; justify-content: center;" onclick="window.print()">🖨️ Exportar Tudo (PDF)</button>
+                    <button class="btn btn-g" style="width: 100%; justify-content: center;" onclick="window.print()">🖨️ Exportar Registro</button>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
+        // --- CONFIGURAÇÃO DO FIREBASE (SÉRGIO, COLE SUAS CHAVES AQUI) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCs6lyzUoZWXpdkuozXUATCQcUOYw3aVtY",
+  authDomain: "multiletramentoslpt.firebaseapp.com",
+  projectId: "multiletramentoslpt",
+  storageBucket: "multiletramentoslpt.firebasestorage.app",
+  messagingSenderId: "566842639797",
+  appId: "1:566842639797:web:74517893823919d86bc5fc"
+        };
+
+        // Inicializar Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
         lucide.createIcons();
+
+        // --- Listeners de Tempo Real (Cloud Firebase) ---
+        
+        // 1. Desafio Surpresa
+        db.ref('session/challenge').on('value', (snapshot) => {
+            const msg = snapshot.val();
+            if (msg) {
+                alert(`🔥 DESAFIO LANÇADO PELO PROFESSOR:\n\n${msg}`);
+            }
+        });
+
+        // 2. Mural do 6º Ano (SD1)
+        db.ref('productions/sd1').on('value', (snapshot) => {
+            const mural = document.getElementById('sd1-mural');
+            mural.innerHTML = '';
+            snapshot.forEach((child) => {
+                const data = child.val();
+                mural.innerHTML += `
+                    <div class="card" style="border-left: 5px solid ${data.color || '#3b82f6'}; padding: 1rem; font-size: 0.8rem;">
+                        <b>${data.name}</b><br>${data.text.substring(0, 60)}...
+                    </div>`;
+            });
+        });
+
+        // 3. Listener Admin (Lista completa para o professor)
+        db.ref('productions').on('value', (snapshot) => {
+            const list = document.getElementById('admin-production-list');
+            list.innerHTML = '';
+            snapshot.forEach((seriesFolder) => {
+                const seriesName = seriesFolder.key;
+                seriesFolder.forEach((prod) => {
+                    const data = prod.val();
+                    const key = prod.key;
+                    list.innerHTML += `
+                        <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <span style="font-weight: 800; color: var(--primary);">${seriesName.toUpperCase()}</span> | <b>${data.name || 'Sem nome'}</b>
+                            </div>
+                            <div style="display: flex; gap: 5px;">
+                                <button onclick="editProd('${seriesName}', '${key}')" style="background: none; border: none; color: #fbbf24; cursor: pointer;">✏️</button>
+                                <button onclick="deleteProd('${seriesName}', '${key}')" style="background: none; border: none; color: #ef4444; cursor: pointer;">🗑️</button>
+                            </div>
+                        </div>`;
+                });
+            });
+            if(list.innerHTML === '') list.innerHTML = '<p style="opacity: 0.5;">Nenhuma produção ainda.</p>';
+        });
 
         // --- Onboarding ---
         if(!localStorage.getItem('cllc_master_app')) {
@@ -437,6 +509,26 @@
         function closeOnboarding() {
             document.getElementById('onboarding-modal').classList.remove('open');
             localStorage.setItem('cllc_master_app', 'true');
+        }
+
+        function editProd(series, key) {
+            const newText = prompt("Editar conteúdo da produção:");
+            if(newText) {
+                db.ref(`productions/${series}/${key}`).update({ text: newText });
+                alert("Atualizado!");
+            }
+        }
+
+        function deleteProd(series, key) {
+            if(confirm("Tem certeza que deseja excluir esta produção?")) {
+                db.ref(`productions/${series}/${key}`).remove();
+            }
+        }
+
+        function clearAllProductions() {
+            if(confirm("⚠️ ATENÇÃO: Isso apagará TODO o mural para uma nova turma. Continuar?")) {
+                db.ref('productions').remove();
+            }
         }
 
         // --- Navegação Séries ---
@@ -568,31 +660,43 @@
 
         function revealSurprise() {
             const ss = ["🔥 Desafio: Use a palavra 'RESILIÊNCIA'!", "🌈 Momento Cor: Troque a cor do seu fundo agora!", "🎤 Performance: Leia seu texto sussurrando!"];
-            alert(ss[Math.floor(Math.random()*ss.length)]);
+            const msg = ss[Math.floor(Math.random()*ss.length)];
+            db.ref('session/challenge').set(msg);
+            setTimeout(() => db.ref('session/challenge').set(null), 5000); // Limpa após 5 seg
             closeProf();
         }
 
         function exportPost() {
             const dest = document.querySelector('#post-preview h3').innerText;
             const msg = document.querySelector('#post-preview textarea').value;
-            downloadFile(`CLLC - Cartão Postal\nPara: ${dest}\n\nMensagem: ${msg}`, 'cartao_postal.txt');
+            const name = document.getElementById('post-from').innerText;
+            const data = { dest, msg, name, timestamp: Date.now() };
+            db.ref('productions/sd2').push(data);
+            downloadFile(`CLLC - Postal\nPara: ${dest}\nMsg: ${msg}`, 'postal.txt');
         }
 
         function exportCronica() {
-            const nome = document.getElementById('sd1-name').value;
-            const texto = document.querySelector('#sd1 textarea').value;
-            downloadFile(`CLLC - Crônica Autobiográfica\nAluno: ${nome}\n\nTexto: ${texto}`, 'cronica_identidade.txt');
+            const name = document.getElementById('sd1-name').value;
+            const text = document.querySelector('#sd1 textarea').value;
+            const color = document.getElementById('sd1-color').value;
+            if(!name || !text) return alert("Preencha seu nome e texto!");
+            
+            db.ref('productions/sd1').push({ name, text, color, timestamp: Date.now() });
+            downloadFile(`CLLC - Crônica\nAluno: ${name}\n\n${text}`, 'cronica.txt');
         }
 
         function exportSlam() {
-            const texto = document.getElementById('slam-editor').value;
-            downloadFile(`CLLC - Poesia Slam\n\n${texto}`, 'poesia_slam.txt');
+            const text = document.getElementById('slam-editor').value;
+            const name = document.getElementById('input-artist').value || "Anônimo";
+            db.ref('productions/sd3').push({ name, text, timestamp: Date.now() });
+            downloadFile(`CLLC - Slam\n\n${text}`, 'slam.txt');
         }
 
         function exportResenha() {
-            const titulo = document.querySelector('#sd4 input[placeholder="Título da Obra"]').value;
-            const texto = document.getElementById('resenha-text').value;
-            downloadFile(`CLLC - Resenha Crítica\nObra: ${titulo}\n\nResenha: ${texto}`, 'resenha_clube.txt');
+            const title = document.querySelector('#sd4 input[placeholder="Título da Obra"]').value;
+            const text = document.getElementById('resenha-text').value;
+            db.ref('productions/sd4').push({ title, text, timestamp: Date.now() });
+            downloadFile(`CLLC - Resenha\nObra: ${title}\n\n${text}`, 'resenha.txt');
         }
 
         function downloadFile(content, filename) {
@@ -601,7 +705,7 @@
             a.href = URL.createObjectURL(blob);
             a.download = filename;
             a.click();
-            alert("✅ Produção salva nos seus Downloads! Envie o arquivo para o professor.");
+            alert("✅ Publicado com sucesso no Mural da Turma e salvo nos seus downloads!");
         }
 
         function setStar(n) {
